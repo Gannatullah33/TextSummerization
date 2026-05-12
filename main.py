@@ -1,0 +1,67 @@
+import pandas as pd
+import numpy as np
+import string
+import os
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import sent_tokenize, word_tokenize
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    confusion_matrix,
+)
+from sentence_transformers import SentenceTransformer
+from transformers import BartForConditionalGeneration, BartTokenizer
+from rouge_score import rouge_scorer
+import torch
+import re
+
+def _ensure_nltk():
+    for path, name in (
+        ("tokenizers/punkt", "punkt"),
+        ("tokenizers/punkt_tab", "punkt_tab"),
+        ("corpora/stopwords", "stopwords"),
+    ):
+        try:
+            nltk.data.find(path)
+        except LookupError:
+            nltk.download(name, quiet=True)
+
+_ensure_nltk()
+
+
+class Summarizer:
+    def __init__(self):
+          self.stop_words = set(stopwords.words('english'))
+        self.tfidf = TfidfVectorizer(stop_words='english')
+        
+    
+        print("Status: Loading Embedding Model...")
+        self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
+
+       
+        print("Status: Loading BART Model (this may take a minute)...")
+        self.tokenizer = BartTokenizer.from_pretrained('facebook/bart-large-cnn')
+        self.model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn')
+
+
+        pass
+
+    def preprocess(self, text):
+        pass
+
+    def summarize_tfidf(self, text):
+        pass
+
+    def summarize_hybrid(self, text):
+        pass
+
+    def summarize_bart(self, text):
+        pass
+
+    def evaluate(self, hypothesis, reference):
+        pass
