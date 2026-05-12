@@ -181,4 +181,14 @@ class Summarizer:
         out["top_tfidf"] = [(int(i), sentences_t[i], float(tfidf_s[i])) for i in order_t]
         out["top_hybrid"] = [(int(i), sentences_h[i], float(hybrid_s[i])) for i in order_h]
         return out
+   def gold_sentence_labels_from_reference(self, sentences, reference, rouge1_f1_threshold=0.12):
+        """Weak labels: sentence is 'important' if ROUGE-1 F1 vs reference summary is high enough.Used only to report Accuracy / Precision / Recall / F1 / Confusion matrix for extractive selection."""
+        if not sentences or not str(reference).strip():
+            return None
+        scorer = rouge_scorer.RougeScorer(["rouge1"], use_stemmer=True)
+        labels = []
+        for s in sentences:
+            f1 = scorer.score(str(reference), s)["rouge1"].fmeasure
+            labels.append(1 if f1 >= rouge1_f1_threshold else 0)
+        return np.array(labels, dtype=int)
 
