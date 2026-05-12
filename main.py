@@ -36,7 +36,7 @@ _ensure_nltk()
 
 class Summarizer:
     def __init__(self):
-          self.stop_words = set(stopwords.words('english'))
+        self.stop_words = set(stopwords.words('english'))
         self.tfidf = TfidfVectorizer(stop_words='english')
         
     
@@ -49,10 +49,13 @@ class Summarizer:
         self.model = BartForConditionalGeneration.from_pretrained('facebook/bart-large-cnn')
 
 
-        pass
-
     def preprocess(self, text):
-        pass
+         text = text.lower() 
+         text = text.translate(str.maketrans('', '', string.punctuation)) # Remove punctuation
+         tokens = word_tokenize(text)
+         tokens = [w for w in tokens if w not in self.stop_words] # Remove stopwords
+         return " ".join(tokens)
+            
 
     def summarize_tfidf(self, text):
         pass
