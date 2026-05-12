@@ -114,3 +114,57 @@ class Summarizer:
         k = min(top_k, len(scores))
         top_idx = np.argsort(scores)[-k:][::-1]
         return [(str(terms[i]), float(scores[i])) for i in top_idx]
+
+    def keyword_recall(self, original, summary, top_k=15):
+        original_processed = self.preprocess(str(original))
+        summary_processed = self.preprocess(str(summary))
+        if not original_processed.strip():
+            return 0.0
+
+        vec = TfidfVectorizer(stop_words='english')
+        matrix = vec.fit_transform([original_processed])
+        terms = vec.get_feature_names_out()
+        scores = matrix.toarray().flatten()
+
+        if len(scores) == 0:
+            return 0.0
+
+        top_idx = np.argsort(scores)[-min(top_k, len(scores)):]
+        important_keywords = set(terms[top_idx])
+        summary_tokens = set(word_tokenize(summary_processed))
+
+        if not important_keywords:
+            return 0.0
+        return len(important_keywords & summary_tokens) / len(important_keywords)
+
+   def sentence_selection_classification_metrics(self, scores, y_true, k):
+        """
+        Treat top-k highest-scoring sentences as predicted 'important' (1) vs not (0).
+        """
+        scores = np.asarray(scores, dtype=float)
+        y_true = np.asarray(y_true, dtype=int)
+        if scores.size == 0 or y_true.size == 0 or scores.shape != y_true.shape:
+            return None
+        k = max(1, min(int(k), len(scores)))
+        y_pred = np.zeros_like(y_true)
+        top_idx = np.argsort(scores)[-k:]
+        y_pred[top_idx] = 1
+        return {
+            "accuracy": float(accuracy_score(y_true, y_pred)),
+            "precision": float(precision_score(y_true, y_pred, zero_division=0)),
+            "recall": float(recall_score(y_true, y_pred, zero_division=0)),
+            "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+            "confusion_matrix": confusion_matrix(y_true, y_pred, labels=[0, 1]).tolist(),
+            "y_true": y_true,
+            "y_pred": y_pred,
+        }
+
+   def _minmax_normalize(self, arr):
+        arr = np.array(arr, dtype=float)
+        min_val = float(np.min(arr))
+        max_val = float(np.max(arr))
+        if max_val - min_val < 1e-12:
+            return np.ones_like(arr)
+        return (arr - min_val) / (max_val - min_val)
+   
+
