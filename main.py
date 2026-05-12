@@ -191,4 +191,141 @@ class Summarizer:
             f1 = scorer.score(str(reference), s)["rouge1"].fmeasure
             labels.append(1 if f1 >= rouge1_f1_threshold else 0)
         return np.array(labels, dtype=int)
+def run():
+    file_path = "data.csv"
 
+    if not os.path.exists(file_path):
+        print(f"Error: File '{file_path}' not found in {os.getcwd()}")
+        return
+
+    df = pd.read_csv(file_path)
+    print(f"Dataset loaded! Total Articles: {len(df)}")
+
+    engine = Summarizer()
+    aggregate = {
+        "tfidf_rougeL": [],
+        "hybrid_rougeL": [],
+        "bart_rougeL": [],
+        "tfidf_ratio": [],
+        "hybrid_ratio": [],
+        "bart_ratio": [],
+        "tfidf_key": [],
+        "hybrid_key": [],
+        "bart_key": [],
+        "tfidf_manual": [],
+        "hybrid_manual": [],
+        "bart_manual": [],
+    }
+
+    for i in range(min(3, len(df))):
+        article_text = df['article'][i]
+        reference_text = df['highlights'][i]
+
+        print(f"\n" + "="*60)
+        print(f"Analyzing Article #{i+1}")
+        print("="*60)
+        
+        # Generate Summaries
+        tfidf_res = engine.tfidf_summary(article_text)
+        hybrid_res = engine.hybrid_extractive_summary(article_text)
+        bart_res = engine.bart_summary(article_text)
+
+        print(f"\n[Original Article]:\n{article_text[:600]}...")
+        print(f"\n[Baseline Summary - TF-IDF]:\n{tfidf_res}")
+        print(f"\n[Improved Extractive Summary - TF-IDF + Embeddings]:\n{hybrid_res}")
+        print(f"\n[Advanced Summary - BART]:\n{bart_res}")
+
+        keywords = engine.important_keywords(article_text, top_k=12)
+        print("\n[Important keywords (TF-IDF over full article)]:")
+        print(", ".join(f"{w} ({s:.3f})" for w, s in keywords[:12]) if keywords else "(none)")
+
+        ranking = engine.key_sentence_ranking(article_text, n=3)
+        sents = ranking["sentences"]
+        tfidf_sc = ranking["tfidf_scores"]
+        hybrid_sc = ranking["hybrid_scores"]
+        print("\n[Top sentences by TF-IDF score]:")
+        for idx, sent, sc in ranking.get("top_tfidf", []):
+            short = (sent[:120] + "…") if len(sent) > 120 else sent
+            print(f"  #{idx} score={sc:.4f} — {short}")
+        print("\n[Top sentences by hybrid TF-IDF + embedding score]:")
+        for idx, sent, sc in ranking.get("top_hybrid", []):
+            short = (sent[:120] + "…") if len(sent) > 120 else sent
+            print(f"  #{idx} score={sc:.4f} — {short}")
+
+        y_gold = engine.gold_sentence_labels_from_reference(sents, reference_text)
+        if y_gold is not None and y_gold.sum() == 0:
+            y_gold = engine.gold_sentence_labels_from_reference(
+                sents, reference_text, rouge1_f1_threshold=0.06
+            )
+        n_pick = min(3, len(sents)) if len(sents) > 3 else max(1, len(sents))
+        if y_gold is not None and len(sents) > 0 and y_gold.sum() > 0:
+            m_t = engine.sentence_selection_classification_metrics(tfidf_sc, y_gold, n_pick)
+            m_h = engine.sentence_selection_classification_metrics(hybrid_sc, y_gold, n_pick)
+            print("\n[Sentence-level metrics vs reference — TF-IDF top-k selection]")
+            if m_t:
+                print(
+                    f"  Accuracy={m_t['accuracy']:.4f}  Precision={m_t['precision']:.4f}  "
+                    f"Recall={m_t['recall']:.4f}  F1={m_t['f1']:.4f}"
+                )
+                print(f"  Confusion matrix [ [TN FP], [FN TP] ] labels order 0,1: {m_t['confusion_matrix']}")
+            print("\n[Sentence-level metrics vs reference — Hybrid top-k selection]")
+            if m_h:
+                print(
+                    f"  Accuracy={m_h['accuracy']:.4f}  Precision={m_h['precision']:.4f}  "
+                    f"Recall={m_h['recall']:.4f}  F1={m_h['f1']:.4f}"
+                )
+                print(f"  Confusion matrix [ [TN FP], [FN TP] ]: {m_h['confusion_matrix']}")
+        else:
+            print(
+                "\n[Sentence-level classification metrics skipped: no positive ROUGE labels "
+                "or empty sentences — try another article or lower threshold in code.]"
+            )
+
+     
+        score_tfidf = engine.evaluate(reference_text, tfidf_res)
+        score_hybrid = engine.evaluate(reference_text, hybrid_res)
+        score_bart = engine.evaluate(reference_text, bart_res)
+
+        ratio_tfidf = engine.compression_ratio(article_text, tfidf_res)
+        ratio_hybrid = engine.compression_ratio(article_text, hybrid_res)
+        ratio_bart = engine.compression_ratio(article_text, bart_res)
+
+        key_tfidf = engine.keyword_recall(article_text, tfidf_res)
+        key_hybrid = engine.keyword_recall(article_text, hybrid_res)
+        key_bart = engine.keyword_recall(article_text, bart_res)
+
+        manual_tfidf = engine.manual_quality_score(article_text, tfidf_res, reference_text)
+        manual_hybrid = engine.manual_quality_score(article_text, hybrid_res, reference_text)
+        manual_bart = engine.manual_quality_score(article_text, bart_res, reference_text)
+
+        aggregate["tfidf_rougeL"].append(score_tfidf['rougeL'].fmeasure)
+        aggregate["hybrid_rougeL"].append(score_hybrid['rougeL'].fmeasure)
+        aggregate["bart_rougeL"].append(score_bart['rougeL'].fmeasure)
+        aggregate["tfidf_ratio"].append(ratio_tfidf)
+        aggregate["hybrid_ratio"].append(ratio_hybrid)
+        aggregate["bart_ratio"].append(ratio_bart)
+        aggregate["tfidf_key"].append(key_tfidf)
+        aggregate["hybrid_key"].append(key_hybrid)
+        aggregate["bart_key"].append(key_bart)
+        aggregate["tfidf_manual"].append(manual_tfidf)
+        aggregate["hybrid_manual"].append(manual_hybrid)
+        aggregate["bart_manual"].append(manual_bart)
+
+        print("\nPerformance Metrics:")
+        print(f"- TF-IDF Baseline: {score_tfidf['rougeL'].fmeasure:.4f}")
+        print(f"- Hybrid TF-IDF+Embeddings: {score_hybrid['rougeL'].fmeasure:.4f}")
+        print(f"- BART Advanced:   {score_bart['rougeL'].fmeasure:.4f}")
+        print(f"- Compression Ratio (TF-IDF / Hybrid / BART): {ratio_tfidf:.3f} / {ratio_hybrid:.3f} / {ratio_bart:.3f}")
+        print(f"- Keyword Recall (TF-IDF / Hybrid / BART): {key_tfidf:.3f} / {key_hybrid:.3f} / {key_bart:.3f}")
+        print(f"- Manual Quality 1-5 (TF-IDF / Hybrid / BART): {manual_tfidf:.1f} / {manual_hybrid:.1f} / {manual_bart:.1f}")
+
+    print("\n" + "="*60)
+    print("Average Results Across Processed Articles")
+    print("="*60)
+    print(f"ROUGE-L: TF-IDF={np.mean(aggregate['tfidf_rougeL']):.4f}, Hybrid={np.mean(aggregate['hybrid_rougeL']):.4f}, BART={np.mean(aggregate['bart_rougeL']):.4f}")
+    print(f"Compression Ratio: TF-IDF={np.mean(aggregate['tfidf_ratio']):.3f}, Hybrid={np.mean(aggregate['hybrid_ratio']):.3f}, BART={np.mean(aggregate['bart_ratio']):.3f}")
+    print(f"Keyword Recall: TF-IDF={np.mean(aggregate['tfidf_key']):.3f}, Hybrid={np.mean(aggregate['hybrid_key']):.3f}, BART={np.mean(aggregate['bart_key']):.3f}")
+    print(f"Manual Quality (1-5): TF-IDF={np.mean(aggregate['tfidf_manual']):.2f}, Hybrid={np.mean(aggregate['hybrid_manual']):.2f}, BART={np.mean(aggregate['bart_manual']):.2f}")
+
+if __name__ == "__main__":
+    run()
