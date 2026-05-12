@@ -166,5 +166,19 @@ class Summarizer:
         if max_val - min_val < 1e-12:
             return np.ones_like(arr)
         return (arr - min_val) / (max_val - min_val)
-   
+       
+   def key_sentence_ranking(self, text, n=3, alpha=0.6):
+        """Human-readable ranking: TF-IDF-only and hybrid scores per sentence."""
+        sentences_t, tfidf_s = self._tfidf_sentence_scores(text)
+        sentences_h, hybrid_s = self._hybrid_sentence_scores(text, alpha=alpha)
+        out = {"sentences": sentences_t, "tfidf_scores": tfidf_s, "hybrid_scores": hybrid_s}
+        if len(sentences_t) == 0:
+            out["top_tfidf"] = []
+            out["top_hybrid"] = []
+            return out
+        order_t = np.argsort(tfidf_s)[::-1][: min(n, len(sentences_t))]
+        order_h = np.argsort(hybrid_s)[::-1][: min(n, len(sentences_h))]
+        out["top_tfidf"] = [(int(i), sentences_t[i], float(tfidf_s[i])) for i in order_t]
+        out["top_hybrid"] = [(int(i), sentences_h[i], float(hybrid_s[i])) for i in order_h]
+        return out
 
