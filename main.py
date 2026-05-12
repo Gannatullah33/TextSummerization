@@ -74,8 +74,28 @@ class Summarizer:
          top_indices = sorted(top_indices)
          return " ".join([sentences[i] for i in top_indices])
 
-    def summarize_hybrid(self, text):
-        pass
+    def _hybrid_sentence_scores(self, text, alpha=0.6):
+        sentences = sent_tokenize(text)
+        if not sentences:
+            return sentences, np.array([], dtype=float)
+        processed = [self.preprocess(s) for s in sentences]
+        tfidf_matrix = self.tfidf.fit_transform(processed).toarray()
+        tfidf_scores = cosine_similarity(tfidf_matrix).sum(axis=1)
+        sent_embeddings = self.embedder.encode(sentences, convert_to_numpy=True)
+        doc_embedding = np.mean(sent_embeddings, axis=0, keepdims=True)
+        emb_scores = cosine_similarity(sent_embeddings, doc_embedding).flatten()
+        tfidf_norm = self._minmax_normalize(tfidf_scores)
+        emb_norm = self._minmax_normalize(emb_scores)
+        combined_scores = alpha * tfidf_norm + (1 - alpha) * emb_norm
+        return sentences, np.asarray(combined_scores, dtype=float)
+
+    def hybrid_extractive_summary(self, text, n=3, alpha=0.6):
+        sentences, combined_scores = self._hybrid_sentence_scores(text, alpha)
+        if len(sentences) <= n:
+            return text
+        top_indices = np.argsort(combined_scores)[-n:]
+        top_indices = sorted(top_indices)
+        return " ".join([sentences[i] for i in top_indices])
 
     def bart_summary(self, text):
         inputs = self.tokenizer(text, return_tensors="pt", max_length=1024, truncation=True)
@@ -191,6 +211,28 @@ class Summarizer:
             f1 = scorer.score(str(reference), s)["rouge1"].fmeasure
             labels.append(1 if f1 >= rouge1_f1_threshold else 0)
         return np.array(labels, dtype=int)
+   def manual_quality_score(self, original, summary, reference=None):
+        # Lightweight manual-style checklist proxy (1-5)
+        ratio = self.compression_ratio(original, summary)
+        key_recall = self.keyword_recall(original, summary)
+
+        score = 1.0
+        if ratio <= 0.6:
+            score += 1.5
+        if ratio <= 0.4:
+            score += 0.5
+        if key_recall >= 0.5:
+            score += 1.0
+        if key_recall >= 0.7:
+            score += 0.5
+
+        if reference is not None:
+            rouge_l = self.evaluate(reference, summary)['rougeL'].fmeasure
+            if rouge_l >= 0.25:
+                score += 0.5
+
+        return min(5.0, score)
+
 def run():
     file_path = "data.csv"
 
