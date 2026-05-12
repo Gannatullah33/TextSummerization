@@ -57,8 +57,22 @@ class Summarizer:
          return " ".join(tokens)
             
 
-    def summarize_tfidf(self, text):
-        pass
+    def _tfidf_sentence_scores(self, text):
+         sentences = sent_tokenize(text)
+         if not sentences:
+             return sentences, np.array([], dtype=float)
+         processed = [self.preprocess(s) for s in sentences]
+         matrix = self.tfidf.fit_transform(processed).toarray()
+         scores = cosine_similarity(matrix).sum(axis=1)
+         return sentences, np.asarray(scores, dtype=float)
+
+    def tfidf_summary(self, text, n=3):
+         sentences, scores = self._tfidf_sentence_scores(text)
+         if len(sentences) <= n:
+             return text
+         top_indices = np.argsort(scores)[-n:]
+         top_indices = sorted(top_indices)
+         return " ".join([sentences[i] for i in top_indices])
 
     def summarize_hybrid(self, text):
         pass
