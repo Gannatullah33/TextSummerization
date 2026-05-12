@@ -91,5 +91,26 @@ class Summarizer:
         return self.tokenizer.decode(summary_ids[0], skip_special_tokens=True)
 
 
-    def evaluate(self, hypothesis, reference):
-        pass
+    def evaluate(self, reference, generated):
+        scorer = rouge_scorer.RougeScorer(['rouge1', 'rougeL'], use_stemmer=True)
+        return scorer.score(reference, generated)
+
+    def compression_ratio(self, original, summary):
+        original_words = max(1, len(word_tokenize(str(original))))
+        summary_words = len(word_tokenize(str(summary)))
+        return summary_words / original_words
+
+    def important_keywords(self, text, top_k=15):
+        """Top TF-IDF terms from the full document (for display / 'main ideas' hints)."""
+        processed = self.preprocess(str(text))
+        if not processed.strip():
+            return []
+        vec = TfidfVectorizer(stop_words="english", max_features=5000)
+        matrix = vec.fit_transform([processed])
+        terms = vec.get_feature_names_out()
+        scores = matrix.toarray().flatten()
+        if len(scores) == 0:
+            return []
+        k = min(top_k, len(scores))
+        top_idx = np.argsort(scores)[-k:][::-1]
+        return [(str(terms[i]), float(scores[i])) for i in top_idx]
